@@ -83,9 +83,6 @@ class LightningClassifier(pl.LightningModule):
     
    
 
-
-
-
 def load_model(model_path):
 
     model_last_ckpt = torch.load(model_path)
@@ -148,11 +145,7 @@ def main():
     model = sewer_models.__dict__[model_name](num_classes = num_classes)
     model.load_state_dict(updated_state_dict)
    
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    
 
-
-    
    
     # #training with features
     for param in model.parameters():
@@ -161,7 +154,7 @@ def main():
     model.classifier[-1] = nn.Linear(num_ftrs,1)
     modelLit = LightningClassifier(model)
     
-    trainer = pl.Trainer(max_epochs=25,gpus=1)
+    trainer = pl.Trainer(max_epochs=2,gpus=1)
     trainer.fit(modelLit,train_dl,val_dl)
     
      
@@ -171,13 +164,7 @@ def main():
             'num_classes': 1
             }, "models/rerained.pth")
 
-    # Validation results
-    model_trained = sewer_models.Xie2019(1)
-    model_trained.load_state_dict(modelLit.state_dict(),strict=False)
-    model_trained = model_trained.to(device)
-    print("VALIDATION")
-    sigmoid_predictions, val_imgPaths = evaluate(test_dl, model_trained, device)
-    print(sigmoid_predictions)
+    
 
 
 if __name__ == "__main__":

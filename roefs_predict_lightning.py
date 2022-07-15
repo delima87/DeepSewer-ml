@@ -65,6 +65,7 @@ def load_model(model_path):
 
 def main():
     pl.seed_everything(1234567890)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # Init data with transforms
     img_size = 224
@@ -78,35 +79,18 @@ def main():
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     #loading data
-    image_datasets_test = datasets.ImageFolder("roefs_dataset/test",eval_transform)
+    image_datasets_test = datasets.ImageFolder("roefs_one_classs/val",eval_transform)
     test_dl = torch.utils.data.DataLoader(image_datasets_test, batch_size=4, shuffle=True, num_workers=4)
     #load model
     MODEL_PATH = "models/rerained.pth"
-    updated_state_dict, model_name, num_classes= load_model(MODEL_PATH)
-    model = sewer_models.Xie2019(2)
-    model.load_state_dict(updated_state_dict)
-
-    sigmoid_predictions, val_imgPaths = evaluate(test_dl, model, device)
-    print(sigmoid_predictions)
-    
-    # model = sewer_models.__dict__[model_name](num_classes = num_classes)
-    # model.load_state_dict(updated_state_dict)
-    # model = sewer_models.Xie2019(2)
-    # modelLit = LightningClassifier(model)
-    # new_models = modelLit.load_from_checkpoint(checkpoint_path = "checkpoints/epoch=24-step=1150.ckpt")  
-    # trainer = Trainer()
-    
-    # image_datasets_val = datasets.ImageFolder("roefs_dataset/val",eval_transform)
-    # val_dl = torch.utils.data.DataLoader(image_datasets_val, batch_size=4, shuffle=True, num_workers=4)
-    # class_names = image_datasets_val.classes
-    # print("num_classes", class_names)
-    
-    # #load models
-    # model = sewer_models.Xie2019(2)
-    # model.load_state_dict(torch.load(MODEL_PATH))
-    # modelLit = LightningClassifier(model)
-    # print(modelLit)
-    
+    # Validation results
+    updated_state_dict, model_name, num_classes = load_model(MODEL_PATH)
+    model_trained = sewer_models.Xie2019(1)
+    model_trained.load_state_dict(updated_state_dict,strict=False)
+    model_trained = model_trained.to(device)
+    print("VALIDATION")
+    sigmoid_predictions, val_imgPaths = evaluate(test_dl, model_trained, device)
+    print(sigmoid_predictions) 
 
 
 
