@@ -105,7 +105,7 @@ def load_model(model_path):
 
 
 
-def training_binary_xie2019(model_path,train_path, val_path,num_epochs,num_classes):
+def training_binary_xie2019(model_path,train_path, val_path, out_path, num_epochs,num_classes):
     pl.seed_everything(1234567890)
 
 
@@ -156,7 +156,7 @@ def training_binary_xie2019(model_path,train_path, val_path,num_epochs,num_class
             'state_dict': modelLit.state_dict(),
             'name': model_name,
             'num_classes': num_classes
-            }, "models/rerained.pth")
+            }, out_path)
 
     
 
@@ -165,6 +165,7 @@ if __name__ == "__main__":
     model_path = "models/xie2019_binary-binary-version_1.pth"    
     train_path = "roefs_one_classs/train"    
     val_path = "roefs_one_classs/val"
+    out_path = "checkpoints/retrained.pth"
     num_epochs = 2 
     num_classes = 1   
-    training_binary_xie2019(model_path,train_path,val_path,num_epochs,num_classes)
+    training_binary_xie2019(model_path,train_path,val_path, out_path, num_epochs,num_classes)
