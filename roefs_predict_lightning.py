@@ -7,7 +7,8 @@ import pytorch_lightning as pl
 import sewer_models
 from roefs_trainer_lightning import LightningClassifier
 import numpy as np
-
+import pandas as pd
+import os
 
 def evaluate(dataloader, model, device):
     model.eval()
@@ -23,7 +24,6 @@ def evaluate(dataloader, model, device):
         for i, (images, imgPaths) in enumerate(dataloader):
             if i % 100 == 0:
                 print("{} / {}".format(i, dataLen))
-
             images = images.to(device)
 
             output = model(images)            
@@ -63,7 +63,7 @@ def load_model(model_path):
 
 
 
-def main():
+def estimate_predictions(model_path,data_path):
     pl.seed_everything(1234567890)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -79,20 +79,24 @@ def main():
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     #loading data
-    image_datasets_test = datasets.ImageFolder("roefs_one_classs/val",eval_transform)
-    test_dl = torch.utils.data.DataLoader(image_datasets_test, batch_size=4, shuffle=True, num_workers=4)
+    image_datasets_test = datasets.ImageFolder(data_path,eval_transform)        
+    test_dl = torch.utils.data.DataLoader(image_datasets_test, batch_size=4, shuffle=False, num_workers=4)
     #load model
-    MODEL_PATH = "models/rerained.pth"
     # Validation results
-    updated_state_dict, model_name, num_classes = load_model(MODEL_PATH)
+    updated_state_dict, model_name, num_classes = load_model(model_path)
     model_trained = sewer_models.Xie2019(1)
     model_trained.load_state_dict(updated_state_dict,strict=False)
     model_trained = model_trained.to(device)
     print("VALIDATION")
     sigmoid_predictions, val_imgPaths = evaluate(test_dl, model_trained, device)
-    print(sigmoid_predictions) 
-
+    results = {}
+    for idx in range(len(image_datasets_test.imgs)):
+        results[image_datasets_test.imgs[idx][0]] = float(sigmoid_predictions[idx])
+    return results
 
 
 if __name__ == "__main__":
-    main()
+    model_path = "models/rerained.pth"
+    data_path = "roefs_one_classs/val"
+    results = estimate_predictions(model_path,data_path)
+    print(results)

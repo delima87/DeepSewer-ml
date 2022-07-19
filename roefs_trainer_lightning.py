@@ -105,7 +105,7 @@ def load_model(model_path):
 
 
 
-def main():
+def training_binary_xie2019(model_path,train_path, val_path,num_epochs,num_classes):
     pl.seed_everything(1234567890)
 
 
@@ -127,45 +127,44 @@ def main():
     ])
 
     #loading data
-    MODEL_PATH = "models/xie2019_binary-binary-version_1.pth"    
-    image_datasets_train = datasets.ImageFolder("roefs_one_classs/train",train_transform)
-    image_datasets_val = datasets.ImageFolder("roefs_one_classs/val",eval_transform)
-    image_datasets_test = datasets.ImageFolder("roefs_one_classs/val",eval_transform)
-    test_dl = torch.utils.data.DataLoader(image_datasets_test, batch_size=4, shuffle=False, num_workers=4)
+    image_datasets_train = datasets.ImageFolder(train_path,train_transform)
+    image_datasets_val = datasets.ImageFolder(val_path,eval_transform)
     train_dl = torch.utils.data.DataLoader(image_datasets_train, batch_size=4, shuffle=True, num_workers=4)
     val_dl = torch.utils.data.DataLoader(image_datasets_val, batch_size=4, shuffle=False, num_workers=4)
     dataset_sizes = len(image_datasets_train)
     class_names = image_datasets_train.classes
-    print("num_classes", class_names)
-    print("size", dataset_sizes)
     
-  
     #load models
-    updated_state_dict, model_name, num_classes = load_model(MODEL_PATH)
-    model = sewer_models.__dict__[model_name](num_classes = num_classes)
+    updated_state_dict, model_name, n_classes = load_model(model_path)
+    model = sewer_models.__dict__[model_name](num_classes = n_classes)
     model.load_state_dict(updated_state_dict)
    
-
-   
+    print("loaded model {} number of classes {}".format(model_name,num_classes))
+    print("model to train, classes: {}, data size (train): {}".format(class_names,dataset_sizes))
     # #training with features
     for param in model.parameters():
         param.requires_grad = False
     num_ftrs = 512 
-    model.classifier[-1] = nn.Linear(num_ftrs,1)
+    model.classifier[-1] = nn.Linear(num_ftrs,num_classes)
     modelLit = LightningClassifier(model)
     
-    trainer = pl.Trainer(max_epochs=2,gpus=1)
+    trainer = pl.Trainer(max_epochs=num_epochs,gpus=1)
     trainer.fit(modelLit,train_dl,val_dl)
     
      
     torch.save({
             'state_dict': modelLit.state_dict(),
             'name': model_name,
-            'num_classes': 1
+            'num_classes': num_classes
             }, "models/rerained.pth")
 
     
 
 
 if __name__ == "__main__":
-    main()
+    model_path = "models/xie2019_binary-binary-version_1.pth"    
+    train_path = "roefs_one_classs/train"    
+    val_path = "roefs_one_classs/val"
+    num_epochs = 2 
+    num_classes = 1   
+    training_binary_xie2019(model_path,train_path,val_path,num_epochs,num_classes)
