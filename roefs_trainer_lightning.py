@@ -198,10 +198,11 @@ def training_binary_xie2019(model_path,train_path, val_path, out_path, num_epoch
     torch.save({
             'state_dict': modelLit.state_dict(),
             'name': model_name,
-            'num_classes': num_classes
+            'num_classes': n_new_classes
             }, out_path)
 
-    
+    print("new output layer", model.classifier[-1])
+    print("Done")
 
 
 if __name__ == "__main__":
