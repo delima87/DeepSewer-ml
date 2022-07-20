@@ -40,49 +40,70 @@ def evaluate(dataloader, model, device):
 
 class LightningClassifier(pl.LightningModule):
 
-    def __init__(self, backbone):
+    def __init__(self, backbone, is_binary, pretrained = False):
         super().__init__()
-        self.model = backbone    
+        self.model = backbone
+        self.criterion=torch.nn.BCEWithLogitsLoss  
+        self.train_function = self.normal_loss  
+        self.is_pretrained = pretrained
+        self.is_binary = is_binary
 
     def forward(self, x):
         logits = self.model(x)
         return logits
-    
     def cross_entropy_loss(self, logits, labels):
         return F.nll_loss(logits, labels)
 
-    def training_step(self, train_batch, batch_idx):
-        x, y = train_batch  
-        logits = self.model(x)
-        # probability distribution over labels
-        x = torch.log_softmax(x, dim=1)
-        #acc = self.train_accuracy(logits, y)
-        loss = self.cross_entropy_loss(logits, y)
-        self.log('train_loss', loss)
-        #self.log('train_acc', acc)
+
+    def normal_loss(self, x, y):
+        y = y.float()
+        y_hat = self.model(x)
+        loss = self.cross_entropy_loss(y_hat, y)
+
         return loss
 
-
-    def validation_step(self, val_batch, batch_idx):
-        x, y = val_batch
-        # probability distribution over labels
-        logits = self.model(x)
-        x = torch.log_softmax(x, dim=1)
-        loss = self.cross_entropy_loss(logits, y)
-        acc = accuracy(logits, y)
-        self.log('val_loss', loss)
-
-    def predict_step(self, batch, batch_idx):
+    def training_step(self, batch, batch_idx):
         x, y = batch
         logits = self.model(x)
-        acc = accuracy(logits, y)
-        self.log('val_loss', acc)
-        return acc
+        #acc = self.train_accuracy(logits, y)
+        loss = self.cross_entropy_loss(logits, y)
+        # .log sends to tensorboard/logger, prog_bar also sends to the progress bar
+        result = pl.TrainResult(loss)
+        result.log('train_loss', loss, on_step=True, on_epoch=True, sync_dist=True, prog_bar=True)
+        return result
+
+    def validation_step(self, batch, batch_idx):
+        x, y = batch
+        logits = self.model(x)
+        loss = self.cross_entropy_loss(logits, y)
+        # lightning monitors 'checkpoint_on' to know when to checkpoint (this is a tensor)
+        result = pl.EvalResult(checkpoint_on=loss)
+        result.log('val_loss', loss, sync_dist=True)
+        return result
+
+    def test_step(self, batch, batch_idx):
+        x, y = batch
+        logits = self.model(x)
+        loss = self.cross_entropy_loss(logits, y)
+        # lightning monitors 'checkpoint_on' to know when to checkpoint (this is a tensor)
+        result = pl.EvalResult(checkpoint_on=loss)
+        result.log('test_loss', loss, sync_dist=True)
+        return result
+
 
     def configure_optimizers(self):
-        #optimizer = torch.optim.SGD(self.model.classifier[-1].parameters(), lr=0.1)
-        optimizer = torch.optim.SGD(self.model.head.parameters(), lr=0.1)
-        return optimizer
+        if (self.is_pretrained) & (not self.is_binary):
+            optim = torch.optim.SGD(self.model.head.parameters(), lr=0.001, momentum=0.6)
+            print("retraining multi")
+        elif (self.is_pretrained) & (self.is_binary):
+            print("retraining binary")
+            optim = torch.optim.SGD(self.model.classifier[-1].parameters(), lr=0.001, momentum=0.6)
+        else:
+            print("training new model")
+            optim = torch.optim.SGD(self.model.parameters(), lr=0.001, momentum=0.6)
+        scheduler = torch.optim.lr_scheduler.MultiStepLR(optim, milestones=[30, 60, 80], gamma=0.1) 
+
+        return [optim], [scheduler]
     
    
 
@@ -143,13 +164,19 @@ def training_tresnet_xl_e2e(model_path,train_path, val_path, out_path, num_epoch
         param.requires_grad = False
     num_ftrs = 2656 
     model.head = nn.Linear(num_ftrs,n_new_classes)
-    modelLit = LightningClassifier(model)
-    #print(updated_state_dict)# model = sewer_models.__dict__[model_name](num_classes = n_classes)
+    modelLit = LightningClassifier(model,is_binary=False,pretrained=True)
     trainer = pl.Trainer(max_epochs=num_epochs,gpus=1)
     trainer.fit(modelLit,train_dl,val_dl)
+    torch.save({
+        'state_dict': modelLit.state_dict(),
+        'name': model_name,
+        'num_classes': n_classes
+        }, out_path)
+    print("new output layer", model.head)
+    print("Done")
     
 
-def training_binary_xie2019(model_path,train_path, val_path, out_path, num_epochs,num_classes):
+def training_binary_xie2019(model_path,train_path, val_path, out_path, num_epochs,n_new_classes):
     pl.seed_everything(1234567890)
     train_dl,val_dl = load_data_train_val(train_path,val_path)
     #load models
@@ -157,14 +184,13 @@ def training_binary_xie2019(model_path,train_path, val_path, out_path, num_epoch
     model = sewer_models.__dict__[model_name](num_classes = n_classes)
     model.load_state_dict(updated_state_dict)
    
-    print("loaded model {} number of classes {}".format(model_name,num_classes))
+    print("loaded model {} number of classes {}".format(model_name,n_classes))
     # #training with features
     for param in model.parameters():
         param.requires_grad = False
     num_ftrs = 512 
-    model.classifier[-1] = nn.Linear(num_ftrs,num_classes)
-    modelLit = LightningClassifier(model)
-    
+    model.classifier[-1] = nn.Linear(num_ftrs,n_new_classes)
+    modelLit = LightningClassifier(model,is_binary=True,pretrained=True)
     trainer = pl.Trainer(max_epochs=num_epochs,gpus=1)
     trainer.fit(modelLit,train_dl,val_dl)
     
@@ -182,7 +208,7 @@ if __name__ == "__main__":
     model_path = "models/xie2019_binary-binary-version_1.pth"    
     train_path = "roefs_one_classs/train"    
     val_path = "roefs_one_classs/val"
-    out_path = "checkpoints/retrained.pth"
+    out_path = "checkpoints/retrained.pth"  
     num_epochs = 2 
     num_classes = 1   
     training_binary_xie2019(model_path,train_path,val_path, out_path, num_epochs,num_classes)
