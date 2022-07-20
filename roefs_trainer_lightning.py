@@ -5,6 +5,7 @@ from collections import OrderedDict
 from torchvision import transforms,datasets
 import pytorch_lightning as pl
 import sewer_models
+import ml_models
 from torchmetrics.functional import accuracy
 import numpy as np
 
@@ -51,7 +52,7 @@ class LightningClassifier(pl.LightningModule):
         return F.nll_loss(logits, labels)
 
     def training_step(self, train_batch, batch_idx):
-        x, y = train_batch
+        x, y = train_batch  
         logits = self.model(x)
         # probability distribution over labels
         x = torch.log_softmax(x, dim=1)
@@ -60,6 +61,7 @@ class LightningClassifier(pl.LightningModule):
         self.log('train_loss', loss)
         #self.log('train_acc', acc)
         return loss
+
 
     def validation_step(self, val_batch, batch_idx):
         x, y = val_batch
@@ -78,7 +80,8 @@ class LightningClassifier(pl.LightningModule):
         return acc
 
     def configure_optimizers(self):
-        optimizer = torch.optim.Adam(self.model.classifier[-1].parameters(), lr=1e-3)
+        #optimizer = torch.optim.SGD(self.model.classifier[-1].parameters(), lr=0.1)
+        optimizer = torch.optim.SGD(self.model.head.parameters(), lr=0.1)
         return optimizer
     
    
@@ -88,8 +91,6 @@ def load_model(model_path):
     model_last_ckpt = torch.load(model_path)
     model_name = model_last_ckpt["hyper_parameters"]["model"]
     num_classes = model_last_ckpt["hyper_parameters"]["num_classes"]
-    training_mode = model_last_ckpt["hyper_parameters"]["training_mode"]
-    br_defect = model_last_ckpt["hyper_parameters"]["br_defect"]
     
     best_model = model_last_ckpt
     best_model_state_dict = best_model["state_dict"]
@@ -103,13 +104,8 @@ def load_model(model_path):
 
     return updated_state_dict, model_name, num_classes
 
-
-
-def training_binary_xie2019(model_path,train_path, val_path, out_path, num_epochs,num_classes):
-    pl.seed_everything(1234567890)
-
-
-    # Init data with transforms
+def load_data_train_val(train_path,val_path):
+        # Init data with transforms
     img_size = 224
 
     train_transform=transforms.Compose([
@@ -133,14 +129,35 @@ def training_binary_xie2019(model_path,train_path, val_path, out_path, num_epoch
     val_dl = torch.utils.data.DataLoader(image_datasets_val, batch_size=4, shuffle=False, num_workers=4)
     dataset_sizes = len(image_datasets_train)
     class_names = image_datasets_train.classes
+    print("data loaded size {}, classes {}".format(dataset_sizes,class_names))
+    return train_dl, val_dl
+
+def training_tresnet_xl_e2e(model_path,train_path, val_path, out_path, num_epochs,n_new_classes):
+    train_dl,val_dl = load_data_train_val(train_path,val_path)
+    #load models
+    updated_state_dict, model_name, n_classes = load_model(model_path)
+    model = ml_models.tresnet_xl(n_classes)
+    model.load_state_dict(updated_state_dict)
+    print("loaded model {} number of classes {}".format(model_name,n_classes))
+    for param in model.parameters():
+        param.requires_grad = False
+    num_ftrs = 2656 
+    model.head = nn.Linear(num_ftrs,n_new_classes)
+    modelLit = LightningClassifier(model)
+    #print(updated_state_dict)# model = sewer_models.__dict__[model_name](num_classes = n_classes)
+    trainer = pl.Trainer(max_epochs=num_epochs,gpus=1)
+    trainer.fit(modelLit,train_dl,val_dl)
     
+
+def training_binary_xie2019(model_path,train_path, val_path, out_path, num_epochs,num_classes):
+    pl.seed_everything(1234567890)
+    train_dl,val_dl = load_data_train_val(train_path,val_path)
     #load models
     updated_state_dict, model_name, n_classes = load_model(model_path)
     model = sewer_models.__dict__[model_name](num_classes = n_classes)
     model.load_state_dict(updated_state_dict)
    
     print("loaded model {} number of classes {}".format(model_name,num_classes))
-    print("model to train, classes: {}, data size (train): {}".format(class_names,dataset_sizes))
     # #training with features
     for param in model.parameters():
         param.requires_grad = False
